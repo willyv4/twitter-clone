@@ -1,28 +1,32 @@
 import os
-import pdb
-import bcrypt
 from flask import Flask, render_template, request, flash, redirect, session, g
 from flask_debugtoolbar import DebugToolbarExtension
 from sqlalchemy.exc import IntegrityError
 from forms import UserAddForm, LoginForm, MessageForm, UpdateUserForm
-from models import db, connect_db, User, Message
-import bcrypt
-from flask_bcrypt import check_password_hash
+from models import Follows, db, connect_db, User, Message, Likes
+
 
 CURR_USER_KEY = "curr_user"
 
 app = Flask(__name__)
+app.testing = True
 
 # Get DB_URI from environ variable (useful for production/testing) or,
 # if not set there, use development local db.
-try:
-    prodURI = os.getenv('DATABASE_URL')
-    prodURI = prodURI.replace("postgres://", "postgresql://")
-    app.config['SQLALCHEMY_DATABASE_URI'] = prodURI
 
-except:
+if app.testing:
     app.config['SQLALCHEMY_DATABASE_URI'] = (
-        os.environ.get('DATABASE_URL', 'postgresql:///warbler'))
+        os.environ.get('DATABASE_URL_TEST', 'postgresql:///warbler_test'))
+else:
+    try:
+        prodURI = os.getenv('DATABASE_URL')
+        prodURI = prodURI.replace("postgres://", "postgresql://")
+        app.config['SQLALCHEMY_DATABASE_URI'] = prodURI
+
+    except:
+        app.config['SQLALCHEMY_DATABASE_URI'] = (
+            os.environ.get('DATABASE_URL', 'postgresql:///warbler'))
+
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SQLALCHEMY_ECHO'] = False
@@ -32,6 +36,12 @@ toolbar = DebugToolbarExtension(app)
 app.config['DEBUG_TB_INTERCEPT_REDIRECTS'] = False
 
 connect_db(app)
+
+print("####################################")
+print("####################################")
+print(app.config['SQLALCHEMY_DATABASE_URI'])
+print("####################################")
+print("####################################")
 
 
 ##############################################################################
@@ -160,6 +170,7 @@ def users_show(user_id):
                 .order_by(Message.timestamp.desc())
                 .limit(100)
                 .all())
+
     return render_template('users/show.html', user=user, messages=messages)
 
 
@@ -172,6 +183,7 @@ def show_following(user_id):
         return redirect("/")
 
     user = User.query.get_or_404(user_id)
+
     return render_template('users/following.html', user=user)
 
 
@@ -240,6 +252,7 @@ def edit_profile():
             return redirect(f"/users/{user.id}")
 
         flash("Wrong password, please try again.", 'danger')
+        return redirect(f"/users/{user.id}")
 
     return render_template('users/edit.html', form=form, user_id=user.id)
 
@@ -260,8 +273,64 @@ def delete_user():
     return redirect("/signup")
 
 
+@app.route("/users/add_like/<int:msg_id>", methods=["GET", "POST"])
+def add_message_like(msg_id):
+
+    user = g.user
+    message = Message.query.get_or_404(msg_id)
+
+    # upon user click...
+
+    # if the user = the user's message ensure they can't like their own message
+    if message.user == user:
+        flash("you can't like your own messages", "error")
+        return redirect("/")
+    # if the message is in user's likes then remove the "like"
+    if message in user.likes:
+        user.likes.remove(message)
+        db.session.commit()
+        flash("Like removed", "success")
+    # else like the message
+    else:
+        user.likes.append(message)
+        db.session.commit()
+        flash("Message liked", 'success')
+    return redirect('/')
+
 ##############################################################################
 # Messages routes:
+
+
+@app.route("/users/<int:user_id>/likes")
+def show_liked_messages(user_id):
+
+    if not g.user:
+        flash("Access unauthorized.", "danger")
+        return redirect("/")
+
+    # join Likes table & Users table
+    # to enable data extraction in relation to both tables.
+
+    # Join the Likes table with the Messages table using the join() method
+    # to extract messages that have been liked by the current user
+    # Join the User table with the Likes table using the join() method
+    # to extract user information associated with each message
+    messages = (Message.query
+                .join(Likes)
+                .join(User)
+                .filter(Likes.user_id == g.user.id)
+                .all())
+
+    print("#########################")
+    print("#########################")
+    print(messages, "around line 320 FROM SHOW LIKED MESSAGES ROUTE")
+    print("#########################")
+    print("#########################")
+
+    user = User.query.get(user_id)
+
+    return render_template('users/likes.html', user=user, messages=messages)
+
 
 @app.route('/messages/new', methods=["GET", "POST"])
 def messages_add():
@@ -322,13 +391,19 @@ def homepage():
     """
 
     if g.user:
-        messages = (Message
-                    .query
-                    .order_by(Message.timestamp.desc())
-                    .limit(100)
-                    .all())
+        # Get all the Message objects from the database where the user_id attribute matches the user_being_followed_id attribute
+        # of a Follows object for the current user, in descending order of timestamp, limiting the results to the most recent 100
+        messages = Message.query.filter(Message.user_id.in_(db.session.query(Follows.user_being_followed_id).filter_by(
+            user_following_id=g.user.id))).order_by(Message.timestamp.desc()).limit(100).all()
 
-        return render_template('home.html', messages=messages)
+        print("#########################")
+        print("#########################")
+        print(messages, "around line 396 FROM HOME ROUTE")
+        print("#########################")
+        print("#########################")
+        likes = g.user.likes
+
+        return render_template('home.html', messages=messages, likes=likes)
 
     else:
         return render_template('home-anon.html')
