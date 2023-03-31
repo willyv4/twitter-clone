@@ -32,7 +32,7 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SQLALCHEMY_ECHO'] = False
 app.config['DEBUG_TB_INTERCEPT_REDIRECTS'] = True
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', "it's a secret")
-toolbar = DebugToolbarExtension(app)
+# toolbar = DebugToolbarExtension(app)
 app.config['DEBUG_TB_INTERCEPT_REDIRECTS'] = False
 
 connect_db(app)
@@ -133,7 +133,7 @@ def logout():
     """Handle logout of user."""
 
     flash("Goodbye!", "success")
-    return redirect('login')
+    return redirect('/login')
 
 
 ##############################################################################
@@ -273,6 +273,9 @@ def delete_user():
     return redirect("/signup")
 
 
+##############################################################################
+# Messages routes:
+
 @app.route("/users/add_like/<int:msg_id>", methods=["GET", "POST"])
 def add_message_like(msg_id):
 
@@ -297,9 +300,6 @@ def add_message_like(msg_id):
         flash("Message liked", 'success')
     return redirect('/')
 
-##############################################################################
-# Messages routes:
-
 
 @app.route("/users/<int:user_id>/likes")
 def show_liked_messages(user_id):
@@ -320,12 +320,6 @@ def show_liked_messages(user_id):
                 .join(User)
                 .filter(Likes.user_id == g.user.id)
                 .all())
-
-    print("#########################")
-    print("#########################")
-    print(messages, "around line 320 FROM SHOW LIKED MESSAGES ROUTE")
-    print("#########################")
-    print("#########################")
 
     user = User.query.get(user_id)
 
@@ -396,11 +390,6 @@ def homepage():
         messages = Message.query.filter(Message.user_id.in_(db.session.query(Follows.user_being_followed_id).filter_by(
             user_following_id=g.user.id))).order_by(Message.timestamp.desc()).limit(100).all()
 
-        print("#########################")
-        print("#########################")
-        print(messages, "around line 396 FROM HOME ROUTE")
-        print("#########################")
-        print("#########################")
         likes = g.user.likes
 
         return render_template('home.html', messages=messages, likes=likes)
